@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+
+# Copyright (C) Lightbend Inc. <https://www.lightbend.com>
+
+# Lib for CI scripts
+
+set -e
+set -o pipefail
+
+EXTRA_OPTS=("-Dakka.test.timefactor=10")
+
+#
+if [ "$TRAVIS_EVENT_TYPE" = "cron" ]; then
+# Previously, we would run the cron jobs against the latest Akka master.
+# Since that is not reliably (https://github.com/lagom/lagom/issues/3046),
+# let's test against the latest Akka version instead:
+#    AKKA_VERSION=$(curl -s https://repo.akka.io/snapshots/com/typesafe/akka/akka-actor_2.13/ | grep -oEi '2\.6\.[0-9]+\+[0-9]+-[0-9a-f]{8}' | sort -V | tail -n 1)
+    AKKA_VERSION=$(curl -q https://repo1.maven.org/maven2/com/typesafe/akka/akka-actor_2.13/maven-metadata.xml | grep latest | sed -e "s/<\/\?latest>//g" | tr -d " ")
+
+    echo "Using Akka SNAPSHOT ${AKKA_VERSION}"
+
+    EXTRA_OPTS+=("-Dlagom.build.akka.version=${AKKA_VERSION}")
+
+    # Avoid Travis CI problem https://github.com/lagom/lagom/issues/3027#issuecomment-704808821
+    EXTRA_OPTS+=("-Dcassandra-query-journal.first-time-bucket=\"20201221T00:00\"")
+fi
+
+runSbt() {
+  sbt "${EXTRA_OPTS[@]}" --warn 'set concurrentRestrictions in Global += Tags.limitAll(1)' "$@"
+}
+
+runSbtNoisy() {
+  sbt "${EXTRA_OPTS[@]}" 'set concurrentRestrictions in Global += Tags.limitAll(1)' "$@"
+}
+
+
+printMessage() {
+  echo "[info]"
+  echo "[info] ---- $1"
+  echo "[info]"
+}

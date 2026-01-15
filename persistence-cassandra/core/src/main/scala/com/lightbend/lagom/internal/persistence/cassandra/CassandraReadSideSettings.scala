@@ -1,0 +1,19 @@
+/*
+ * Copyright (C) Lightbend Inc. <https://www.lightbend.com>
+ */
+
+package com.lightbend.lagom.internal.persistence.cassandra
+
+import javax.inject.Inject
+import akka.actor.ActorSystem
+import com.datastax.driver.core.ConsistencyLevel
+
+/**
+ * Internal API
+ */
+private[lagom] class CassandraReadSideSettings @Inject() (system: ActorSystem) {
+  private val cassandraConfig = system.settings.config.getConfig("lagom.persistence.read-side.cassandra")
+
+  val autoCreateTables: Boolean          = cassandraConfig.getBoolean("tables-autocreate")
+  val writeConsistency: ConsistencyLevel = ConsistencyLevel.valueOf(cassandraConfig.getString("write-consistency"))
+}
