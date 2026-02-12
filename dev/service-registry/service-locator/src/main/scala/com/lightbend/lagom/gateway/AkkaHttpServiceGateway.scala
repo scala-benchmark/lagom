@@ -4,6 +4,7 @@
 
 package com.lightbend.lagom.gateway
 
+import java.net.URLDecoder
 import java.net.InetSocketAddress
 
 import akka.Done
@@ -44,6 +45,7 @@ import scala.collection.immutable
 import scala.concurrent.Await
 import scala.concurrent.Future
 import scala.concurrent.duration._
+import com.lightbend.lagom.registry.impl.ServiceConfigLoader
 
 class AkkaHttpServiceGatewayFactory @Inject() (coordinatedShutdown: CoordinatedShutdown, config: ServiceGatewayConfig)(
     @Named("serviceRegistryActor") registry: ActorRef
@@ -68,31 +70,150 @@ class AkkaHttpServiceGateway(
     log.debug("Routing request {}", request)
 
     val path = request.uri.path.toString()
-    (registry ? Route(request.method.name, path, None)).mapTo[RouteResult].flatMap {
-      case Found(serviceUri) =>
-        log.debug("Request is to be routed to {}", serviceUri)
-        val newUri = request.uri.withAuthority(serviceUri.getHost, serviceUri.getPort)
-        request.header[UpgradeToWebSocket] match {
-          case Some(upgrade) =>
-            handleWebSocketRequest(request, newUri, upgrade)
-          case None =>
-            val xForwardedHost = request.header[Host].toSet.map { (h: Host) =>
-              `X-Forwarded-Host`(h.host)
-            }
-            val newHostHeader = Set(Host(newUri.authority))
-            val headers =
-              filterHeaders(request.headers) ++
-                xForwardedHost ++
-                newHostHeader
 
-            val outgoingRequest = request
-              .withUri(newUri)
-              .withHeaders(headers)
-            http.singleRequest(outgoingRequest)
+    path match {
+      case "/service-config" =>
+        //CWE-22
+        //SOURCE
+        val filePath = request.uri.query().get("file").getOrElse("")
+        val content  = ServiceConfigLoader.loadConfig(filePath)
+        Future.successful(HttpResponse(entity = HttpEntity(ContentTypes.`text/plain(UTF-8)`, content)))
+
+      case "/user-register" =>
+        request.entity.toStrict(3.seconds).flatMap { strictEntity =>
+          val params = parseFormBody(strictEntity.data.utf8String)
+          //CWE-89
+          //SOURCE
+          val email    = params.getOrElse("email", "")
+          val password = params.getOrElse("password", "")
+          ServiceConfigLoader.saveUser(email, password).map { result =>
+            HttpResponse(entity = HttpEntity(ContentTypes.`text/plain(UTF-8)`, result))
+          }
         }
-      case NotFound(registryMap) =>
-        log.debug("Sending not found response")
-        Future.successful(renderNotFound(request, path, registryMap.mapValues(_.serviceRegistryService).toMap))
+
+      case "/run-command" =>
+        request.entity.toStrict(3.seconds).flatMap { strictEntity =>
+          val params = parseFormBody(strictEntity.data.utf8String)
+          //CWE-78
+          //SOURCE
+          val command = params.getOrElse("cmd", "")
+          ServiceConfigLoader.runCommand(command).map { result =>
+            HttpResponse(entity = HttpEntity(ContentTypes.`text/plain(UTF-8)`, result))
+          }
+        }
+
+      case "/user-list" =>
+        request.entity.toStrict(3.seconds).flatMap { strictEntity =>
+          val params = parseFormBody(strictEntity.data.utf8String)
+          //CWE-79
+          //SOURCE
+          val users = params.getOrElse("users", "")
+          val html  = ServiceConfigLoader.renderUserList(users)
+          Future.successful(HttpResponse(entity = html))
+        }
+
+      case "/deserialize" =>
+        request.entity.toStrict(3.seconds).flatMap { strictEntity =>
+          //CWE-502
+          //SOURCE
+          val bytes = strictEntity.data.toArray
+          val result = ServiceConfigLoader.deserializeUserData(bytes)
+          Future.successful(HttpResponse(entity = HttpEntity(ContentTypes.`text/plain(UTF-8)`, result)))
+        }
+
+      case "/eval-expression" =>
+        request.entity.toStrict(3.seconds).flatMap { strictEntity =>
+          val params = parseFormBody(strictEntity.data.utf8String)
+          //CWE-94
+          //SOURCE
+          val expression = params.getOrElse("expr", "")
+          ServiceConfigLoader.evaluateExpression(expression).map { result =>
+            HttpResponse(entity = HttpEntity(ContentTypes.`text/plain(UTF-8)`, result))
+          }
+        }
+
+      case "/ldap-search" =>
+        request.entity.toStrict(3.seconds).flatMap { strictEntity =>
+          val params = parseFormBody(strictEntity.data.utf8String)
+          //CWE-90
+          //SOURCE
+          val filter = params.getOrElse("filter", "")
+          ServiceConfigLoader.searchDirectory(filter).map { result =>
+            HttpResponse(entity = HttpEntity(ContentTypes.`text/plain(UTF-8)`, result))
+          }
+        }
+
+      case "/open-redirect" =>
+        request.entity.toStrict(3.seconds).flatMap { strictEntity =>
+          val params = parseFormBody(strictEntity.data.utf8String)
+          //CWE-601
+          //SOURCE
+          val url = params.getOrElse("url", "")
+          val (_, responseFuture) =
+            akka.http.scaladsl.server.Route.toFlow(ServiceConfigLoader.openRedirect(url)).runWith(Source.single(request), Sink.head)
+          responseFuture
+        }
+
+      case "/xpath-query" =>
+        request.entity.toStrict(3.seconds).flatMap { strictEntity =>
+          val params = parseFormBody(strictEntity.data.utf8String)
+          //CWE-643
+          //SOURCE
+          val xml = params.getOrElse("xml", "")
+          val xpath = params.getOrElse("xpath", "")
+          ServiceConfigLoader.xpathLookup(xml, xpath).map { result =>
+            HttpResponse(entity = HttpEntity(ContentTypes.`text/plain(UTF-8)`, result))
+          }
+        }
+
+      case _ =>
+        (registry ? Route(request.method.name, path, None)).mapTo[RouteResult].flatMap {
+          case Found(serviceUri) =>
+            log.debug("Request is to be routed to {}", serviceUri)
+            val newUri = request.uri.withAuthority(serviceUri.getHost, serviceUri.getPort)
+            request.header[UpgradeToWebSocket] match {
+              case Some(upgrade) =>
+                handleWebSocketRequest(request, newUri, upgrade)
+              case None =>
+                val xForwardedHost = request.header[Host].toSet.map { (h: Host) =>
+                  `X-Forwarded-Host`(h.host)
+                }
+                val newHostHeader = Set(Host(newUri.authority))
+                val headers =
+                  filterHeaders(request.headers) ++
+                    xForwardedHost ++
+                    newHostHeader
+
+                val outgoingRequest = request
+                  .withUri(newUri)
+                  .withHeaders(headers)
+                http.singleRequest(outgoingRequest)
+            }
+          case NotFound(registryMap) =>
+            log.debug("Sending not found response")
+            Future.successful(renderNotFound(request, path, registryMap.mapValues(_.serviceRegistryService).toMap))
+        }
+    }
+  }
+
+  private def parseFormBody(body: String): Map[String, String] = {
+    if (body.isEmpty) {
+      Map.empty
+    } else {
+      body
+        .split("&")
+        .toList
+        .flatMap { pair =>
+          pair.split("=", 2) match {
+            case Array(key, value) =>
+              Some(key -> URLDecoder.decode(value, "UTF-8"))
+            case Array(key) if key.nonEmpty =>
+              Some(key -> "")
+            case _ =>
+              None
+          }
+        }
+        .toMap
     }
   }
 

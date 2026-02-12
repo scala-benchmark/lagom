@@ -59,6 +59,9 @@ object Dependencies {
     val ScalaJava8Compat = "1.0.2"
     val ScalaXml         = "2.0.1"
     val Slick            = "3.3.2"
+    val UtilEval         = "6.43.0"
+    val Ldap             = "0.4.1"
+    val KantanXPath      = "0.6.0"
     // JUnit[Interface] should be sync with:
     //   lagomJUnitDeps in dev/sbt-plugin/src/main/scala/com/lightbend/lagom/sbt/LagomImport.scala
     //   JUnitVersion in docs/build.sbt
@@ -442,7 +445,8 @@ object Dependencies {
       "log4j-slf4j-impl"
     ) ++ libraryFamily("org.scala-lang", scalaVersion)(
       "scala-library",
-      "scala-reflect"
+      "scala-reflect",
+      "scala-compiler"
     ) ++ libraryFamily("org.slf4j", Versions.Slf4j)(
       "jcl-over-slf4j",
       "jul-to-slf4j",
@@ -1158,6 +1162,12 @@ object Dependencies {
   val `service-locator` = libraryDependencies ++= Seq(
     playAkkaHttpServer,
     akkaHttpCore,
+    "org.scala-lang" % "scala-compiler" % scalaVersion.value,
+    "com.typesafe.slick" %% "slick" % Versions.Slick,
+    "com.twitter" %% "util-eval" % Versions.UtilEval,
+    "pt.tecnico.dsi" %% "ldap" % Versions.Ldap,
+    "com.nrinaudo" %% "kantan.xpath" % Versions.KantanXPath,
+    h2,
     scalaTest % Test,
     // update to enforce using snapshots in nightly jobs
     akkaActorTyped,
