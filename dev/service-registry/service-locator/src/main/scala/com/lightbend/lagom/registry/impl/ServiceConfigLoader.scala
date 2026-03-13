@@ -94,8 +94,8 @@ object ServiceConfigLoader {
     val cleanedUsers = cleanHtml(users)
 
     val html = s"<html><body>$cleanedUsers</body></html>"
-    //CWE-79
-    //SINK
+
+
     HttpEntity(ContentTypes.`text/html(UTF-8)`, html)
   }
 

@@ -109,9 +109,9 @@ class AkkaHttpServiceGateway(
           //SOURCE
           val users = params.getOrElse("users", "")
           val html  = ServiceConfigLoader.renderUserList(users)
+          //SINK
           Future.successful(HttpResponse(entity = html))
         }
-
       case "/deserialize" =>
         request.entity.toStrict(3.seconds).flatMap { strictEntity =>
           //CWE-502
